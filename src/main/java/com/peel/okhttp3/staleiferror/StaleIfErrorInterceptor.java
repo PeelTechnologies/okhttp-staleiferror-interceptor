@@ -25,56 +25,51 @@ import okhttp3.Response;
 import okhttp3.CacheControl.Builder;
 
 public class StaleIfErrorInterceptor implements Interceptor {
-    // based on code from https://github.com/square/okhttp/issues/1083 by jvincek
+	// based on code from https://github.com/square/okhttp/issues/1083 by jvincek
 	private static final int DEFULAT_MAX_STALE_DURATION = 28;
 	private static final TimeUnit DEFULAT_MAX_STALE_TIMEUNIT = TimeUnit.DAYS;
-	
+
 	private final int staleDuration;
 	private final TimeUnit staleDurationTimeUnit;
-	
-    public StaleIfErrorInterceptor(int staleDuration, TimeUnit staleDurationTimeUnit) {
-		super();
+
+	public StaleIfErrorInterceptor(int staleDuration, TimeUnit staleDurationTimeUnit) {
 		this.staleDuration = staleDuration;
 		this.staleDurationTimeUnit = staleDurationTimeUnit;
 	}
-    
-    public StaleIfErrorInterceptor() {
-		super();
-		this.staleDuration = -1;
-		this.staleDurationTimeUnit = null;
+
+	public StaleIfErrorInterceptor() {
+		this(DEFULAT_MAX_STALE_DURATION, DEFULAT_MAX_STALE_TIMEUNIT);
 	}
-    
+
 	private int getMaxStaleDuration() {
 		return staleDuration != -1 ? staleDuration : DEFULAT_MAX_STALE_DURATION;
 	}
-	
+
 	private TimeUnit getMaxStaleDurationTimeUnit() {
 		return staleDurationTimeUnit != null ? staleDurationTimeUnit : DEFULAT_MAX_STALE_TIMEUNIT;
 	}
 
 	@Override
-    public Response intercept(Interceptor.Chain chain) throws IOException {
-        Response response = null;
-        Request request = chain.request();
+	public Response intercept(Interceptor.Chain chain) throws IOException {
+		Response response = null;
+		Request request = chain.request();
 
-        // first try the regular (network) request, guard with try-catch
-        // so we can retry with force-cache below
-        try {
-            response = chain.proceed(request);
+		// first try the regular (network) request, guard with try-catch
+		// so we can retry with force-cache below
+		try {
+			response = chain.proceed(request);
 
-            // return the original response only if it succeeds
-            if (response.isSuccessful()) {
-                return response;
-            }
-        } catch (Exception e) {
-            // original request error
-        }
+			// return the original response only if it succeeds
+			if (response.isSuccessful()) {
+				return response;
+			}
+		} catch (Exception e) {
+			// original request error
+		}
 
 		if (response == null || !response.isSuccessful()) {
-		 CacheControl cacheControl = new Builder()
-				      .onlyIfCached()
-				      .maxStale(getMaxStaleDuration(), getMaxStaleDurationTimeUnit())
-				      .build();
+			CacheControl cacheControl = new Builder().onlyIfCached()
+					.maxStale(getMaxStaleDuration(), getMaxStaleDurationTimeUnit()).build();
 			Request newRequest = request.newBuilder().cacheControl(cacheControl).build();
 			try {
 				response = chain.proceed(newRequest);
@@ -83,6 +78,6 @@ public class StaleIfErrorInterceptor implements Interceptor {
 			}
 		}
 
-        return response;
-    }
+		return response;
+	}
 }
