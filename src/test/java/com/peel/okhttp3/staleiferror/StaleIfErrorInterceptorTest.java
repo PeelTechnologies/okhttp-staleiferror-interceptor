@@ -36,216 +36,211 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 
 /**
- * This class tests the following.
- * 1. Test max-age and max-stale values.
- * 2. Test if cache is refreshed with new response.
- * 3. Test if a 504 Unsatisfiable request is sent on expiration of stale data.
+ * This class tests the following. 1. Test max-age and max-stale values. 2. Test
+ * if cache is refreshed with new response. 3. Test if a 504 Unsatisfiable
+ * request is sent on expiration of stale data.
+ * 
  * @author swaroop
  */
 public class StaleIfErrorInterceptorTest {
 
-	@Rule
-	public final MockWebServer server = new MockWebServer();
+    @Rule
+    public final MockWebServer server = new MockWebServer();
 
-	private OkHttpClient client;
-	private OkHttpClient clientWith4SecMaxStale;
+    private OkHttpClient client;
+    private OkHttpClient clientWith4SecMaxStale;
 
-	private HttpUrl url;
+    private HttpUrl url;
 
-	@Before
-	public void setUp() {
-		client = new OkHttpClient.Builder()
-				.addInterceptor(new StaleIfErrorInterceptor())
-				.cache(new Cache(new File("./caches"), (long) (1024 * 1024 * 10)))
-				.connectTimeout(2, TimeUnit.SECONDS)
-				.build();
-		
-		clientWith4SecMaxStale = new OkHttpClient.Builder()
-				.addInterceptor(new StaleIfErrorInterceptor(4, TimeUnit.SECONDS))
-				.cache(new Cache(new File("./caches"), (long) (1024 * 1024 * 10)))
-				.connectTimeout(2, TimeUnit.SECONDS)
-				.build();
+    @Before
+    public void setUp() {
+        client = new OkHttpClient.Builder().addInterceptor(new StaleIfErrorInterceptor())
+                .cache(new Cache(new File("./caches"), (long) (1024 * 1024 * 10))).connectTimeout(2, TimeUnit.SECONDS)
+                .build();
 
-		url = server.url("/");
-	}
+        clientWith4SecMaxStale = new OkHttpClient.Builder()
+                .addInterceptor(new StaleIfErrorInterceptor(4, TimeUnit.SECONDS))
+                .cache(new Cache(new File("./caches"), (long) (1024 * 1024 * 10))).connectTimeout(2, TimeUnit.SECONDS)
+                .build();
 
-	private Request.Builder request() {
-		return new Request.Builder().url(url);
-	}
+        url = server.url("/");
+    }
 
-	@Test
-	public void testCachingWithMaxAge() throws Exception {
-		// setup a server with mock response and max age 2 sec
-		MockResponse mockResponse = new MockResponse().setResponseCode(200).setBody("Hello from mock server")
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
-		MockResponse mock404Response = new MockResponse().setResponseCode(404)
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
-		server.enqueue(mockResponse);
-		server.enqueue(mock404Response);
-		server.enqueue(mockResponse);
+    private Request.Builder request() {
+        return new Request.Builder().url(url);
+    }
 
-		Request request = request().get().build();
-		Response response = null;
+    @Test
+    public void testCachingWithMaxAge() throws Exception {
+        // setup a server with mock response and max age 2 sec
+        MockResponse mockResponse = new MockResponse().setResponseCode(200).setBody("Hello from mock server")
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
+        MockResponse mock404Response = new MockResponse().setResponseCode(404)
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
+        server.enqueue(mockResponse);
+        server.enqueue(mock404Response);
+        server.enqueue(mockResponse);
 
-		// make first call and cache the response
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNull(response.cacheResponse());
-		assertNotNull(response.networkResponse());
-		assertEquals(200, response.code());
-		response.body().close();
+        Request request = request().get().build();
+        Response response = null;
 
-		// get response from the local cache.
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNotNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(200, response.code());
-		response.body().close();
+        // make first call and cache the response
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNull(response.cacheResponse());
+        assertNotNull(response.networkResponse());
+        assertEquals(200, response.code());
+        response.body().close();
 
-		Thread.sleep(1000);
+        // get response from the local cache.
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNotNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(200, response.code());
+        response.body().close();
 
-		// get response from the local cache
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNotNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(200, response.code());
-		response.body().close();
+        Thread.sleep(1000);
 
-		Thread.sleep(5000);
+        // get response from the local cache
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNotNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(200, response.code());
+        response.body().close();
 
-		// get response from the stale cache
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNotNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(200, response.code());
-		response.body().close();
+        Thread.sleep(5000);
 
-		// bring back the server here
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNull(response.cacheResponse());
-		assertNotNull(response.networkResponse());
-		response.body().close();
+        // get response from the stale cache
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNotNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(200, response.code());
+        response.body().close();
 
-	}
-	
-	@Test
-	public void testIfCacheRefreshWithNewResponse() throws Exception {
-		// setup a server with mock response and max age 2 sec
-		String responseOne = "Hello from mock server";
-		String responseTwo = "Hello again from mock server";
-		MockResponse mockResponse = new MockResponse().setResponseCode(200).setBody(responseOne)
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=1");
-		MockResponse mock404Response = new MockResponse().setResponseCode(404)
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
-		MockResponse mockResponse2 = new MockResponse().setResponseCode(200).setBody(responseTwo)
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
-		server.enqueue(mockResponse);
-		server.enqueue(mockResponse2);
-		server.enqueue(mock404Response);
+        // bring back the server here
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNull(response.cacheResponse());
+        assertNotNull(response.networkResponse());
+        response.body().close();
 
-		Request request = request().get().build();
-		Response response = null;
-		// make first call and cache the response
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNull(response.cacheResponse());
-		assertNotNull(response.networkResponse());
-		assertEquals(200, response.code());
-		assertEquals(responseOne, new String(response.body().bytes()));
-		response.body().close();
+    }
 
-		Thread.sleep(2000);
+    @Test
+    public void testIfCacheRefreshWithNewResponse() throws Exception {
+        // setup a server with mock response and max age 2 sec
+        String responseOne = "Hello from mock server";
+        String responseTwo = "Hello again from mock server";
+        MockResponse mockResponse = new MockResponse().setResponseCode(200).setBody(responseOne)
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=1");
+        MockResponse mock404Response = new MockResponse().setResponseCode(404)
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
+        MockResponse mockResponse2 = new MockResponse().setResponseCode(200).setBody(responseTwo)
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
+        server.enqueue(mockResponse);
+        server.enqueue(mockResponse2);
+        server.enqueue(mock404Response);
 
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNull(response.cacheResponse());
-		assertNotNull(response.networkResponse());
-		assertEquals(200, response.code());
-		assertEquals(responseTwo, new String(response.body().bytes()));
-		response.body().close();
+        Request request = request().get().build();
+        Response response = null;
+        // make first call and cache the response
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNull(response.cacheResponse());
+        assertNotNull(response.networkResponse());
+        assertEquals(200, response.code());
+        assertEquals(responseOne, new String(response.body().bytes()));
+        response.body().close();
 
-		// cached 2 response.
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNotNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(200, response.code());
-		String actual = new String(response.body().bytes());
-		assertEquals(responseTwo, actual);
-		response.body().close();
+        Thread.sleep(2000);
 
-		Thread.sleep(2000);
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNull(response.cacheResponse());
+        assertNotNull(response.networkResponse());
+        assertEquals(200, response.code());
+        assertEquals(responseTwo, new String(response.body().bytes()));
+        response.body().close();
 
-		// cached 2 response.
-		response = client.newCall(request).execute();
-		assertNotNull(response);
-		assertNotNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(200, response.code());
-		actual = new String(response.body().bytes());
-		assertEquals(responseTwo, actual);
-		response.body().close();
+        // cached 2 response.
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNotNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(200, response.code());
+        String actual = new String(response.body().bytes());
+        assertEquals(responseTwo, actual);
+        response.body().close();
 
-	}
-	
-	@Test
-	public void testStaleCacheExpired() throws Exception {
+        Thread.sleep(2000);
 
-		String responseOne = "Hello from mock server";
-		MockResponse mockResponse = new MockResponse().setResponseCode(200).setBody(responseOne)
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=1");
-		MockResponse mock404Response = new MockResponse().setResponseCode(404)
-				.addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
+        // cached 2 response.
+        response = client.newCall(request).execute();
+        assertNotNull(response);
+        assertNotNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(200, response.code());
+        actual = new String(response.body().bytes());
+        assertEquals(responseTwo, actual);
+        response.body().close();
 
-		server.enqueue(mockResponse);
-		server.enqueue(mock404Response);
+    }
 
-		Request request = request().get().build();
-		Response response = null;
+    @Test
+    public void testStaleCacheExpired() throws Exception {
 
-		// make first call and cache the response
-		response = clientWith4SecMaxStale.newCall(request).execute();
-		assertNotNull(response);
-		assertNull(response.cacheResponse());
-		assertNotNull(response.networkResponse());
-		assertEquals(200, response.code());
-		assertEquals(responseOne, new String(response.body().bytes()));
-		response.body().close();
+        String responseOne = "Hello from mock server";
+        MockResponse mockResponse = new MockResponse().setResponseCode(200).setBody(responseOne)
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=1");
+        MockResponse mock404Response = new MockResponse().setResponseCode(404)
+                .addHeader("Content-Type: text/html; charset=utf-8").addHeader("Cache-Control", "public, max-age=2");
 
-		Thread.sleep(2000);
+        server.enqueue(mockResponse);
+        server.enqueue(mock404Response);
 
-		response = clientWith4SecMaxStale.newCall(request).execute();
-		assertNotNull(response);
-		assertNotNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(200, response.code());
-		response.body().close();
+        Request request = request().get().build();
+        Response response = null;
 
-		Thread.sleep(3000);
+        // make first call and cache the response
+        response = clientWith4SecMaxStale.newCall(request).execute();
+        assertNotNull(response);
+        assertNull(response.cacheResponse());
+        assertNotNull(response.networkResponse());
+        assertEquals(200, response.code());
+        assertEquals(responseOne, new String(response.body().bytes()));
+        response.body().close();
 
-		// stale is also expired here
-		response = clientWith4SecMaxStale.newCall(request).execute();
-		assertNotNull(response);
-		assertNull(response.cacheResponse());
-		assertNull(response.networkResponse());
-		assertEquals(504, response.code());
-		response.body().close();
-	}
+        Thread.sleep(2000);
 
-	@After
-	public void tearDown() {
-		File cachesDir = new File("./caches");
-		if (cachesDir.exists() && cachesDir.isDirectory()) {
-			for (File file : cachesDir.listFiles()) {
-				file.delete();
-			}
-		}
-		cachesDir.delete();
-		
-	}
+        response = clientWith4SecMaxStale.newCall(request).execute();
+        assertNotNull(response);
+        assertNotNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(200, response.code());
+        response.body().close();
 
+        Thread.sleep(3000);
+
+        // stale is also expired here
+        response = clientWith4SecMaxStale.newCall(request).execute();
+        assertNotNull(response);
+        assertNull(response.cacheResponse());
+        assertNull(response.networkResponse());
+        assertEquals(504, response.code());
+        response.body().close();
+    }
+
+    @After
+    public void tearDown() {
+        File cachesDir = new File("./caches");
+        if (cachesDir.exists() && cachesDir.isDirectory()) {
+            for (File file : cachesDir.listFiles()) {
+                file.delete();
+            }
+        }
+        cachesDir.delete();
+    }
 }

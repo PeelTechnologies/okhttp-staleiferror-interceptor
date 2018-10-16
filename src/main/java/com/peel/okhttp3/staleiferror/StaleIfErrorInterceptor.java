@@ -25,59 +25,62 @@ import okhttp3.Response;
 import okhttp3.CacheControl.Builder;
 
 public class StaleIfErrorInterceptor implements Interceptor {
-	// based on code from https://github.com/square/okhttp/issues/1083 by jvincek
-	private static final int DEFULAT_MAX_STALE_DURATION = 28;
-	private static final TimeUnit DEFULAT_MAX_STALE_TIMEUNIT = TimeUnit.DAYS;
+    // based on code from https://github.com/square/okhttp/issues/1083 by jvincek
+    private static final int DEFULAT_MAX_STALE_DURATION = 28;
+    private static final TimeUnit DEFULAT_MAX_STALE_TIMEUNIT = TimeUnit.DAYS;
 
-	private final int staleDuration;
-	private final TimeUnit staleDurationTimeUnit;
+    private final int staleDuration;
+    private final TimeUnit staleDurationTimeUnit;
 
-	public StaleIfErrorInterceptor(int staleDuration, TimeUnit staleDurationTimeUnit) {
-		this.staleDuration = staleDuration;
-		this.staleDurationTimeUnit = staleDurationTimeUnit;
-	}
+    public StaleIfErrorInterceptor(int staleDuration, TimeUnit staleDurationTimeUnit) {
+        // Preconditions check
+        if (staleDuration <= 0) throw new AssertionError();
+        if (staleDurationTimeUnit == null) throw new AssertionError();
 
-	public StaleIfErrorInterceptor() {
-		this(DEFULAT_MAX_STALE_DURATION, DEFULAT_MAX_STALE_TIMEUNIT);
-	}
+        this.staleDuration = staleDuration;
+        this.staleDurationTimeUnit = staleDurationTimeUnit;
+    }
 
-	private int getMaxStaleDuration() {
-		return staleDuration != -1 ? staleDuration : DEFULAT_MAX_STALE_DURATION;
-	}
+    public StaleIfErrorInterceptor() {
+        this(DEFULAT_MAX_STALE_DURATION, DEFULAT_MAX_STALE_TIMEUNIT);
+    }
 
-	private TimeUnit getMaxStaleDurationTimeUnit() {
-		return staleDurationTimeUnit != null ? staleDurationTimeUnit : DEFULAT_MAX_STALE_TIMEUNIT;
-	}
+    private int getMaxStaleDuration() {
+        return staleDuration != -1 ? staleDuration : DEFULAT_MAX_STALE_DURATION;
+    }
 
-	@Override
-	public Response intercept(Interceptor.Chain chain) throws IOException {
-		Response response = null;
-		Request request = chain.request();
+    private TimeUnit getMaxStaleDurationTimeUnit() {
+        return staleDurationTimeUnit != null ? staleDurationTimeUnit : DEFULAT_MAX_STALE_TIMEUNIT;
+    }
 
-		// first try the regular (network) request, guard with try-catch
-		// so we can retry with force-cache below
-		try {
-			response = chain.proceed(request);
+    @Override
+    public Response intercept(Interceptor.Chain chain) throws IOException {
+        Response response = null;
+        Request request = chain.request();
 
-			// return the original response only if it succeeds
-			if (response.isSuccessful()) {
-				return response;
-			}
-		} catch (Exception e) {
-			// original request error
-		}
+        // first try the regular (network) request, guard with try-catch
+        // so we can retry with force-cache below
+        try {
+            response = chain.proceed(request);
 
-		if (response == null || !response.isSuccessful()) {
-			CacheControl cacheControl = new Builder().onlyIfCached()
-					.maxStale(getMaxStaleDuration(), getMaxStaleDurationTimeUnit()).build();
-			Request newRequest = request.newBuilder().cacheControl(cacheControl).build();
-			try {
-				response = chain.proceed(newRequest);
-			} catch (Exception e) { // cache not available
-				throw e;
-			}
-		}
+            // return the original response only if it succeeds
+            if (response.isSuccessful()) {
+                return response;
+            }
+        } catch (Exception e) {
+            // original request error
+        }
 
-		return response;
-	}
+        if (response == null || !response.isSuccessful()) {
+            CacheControl cacheControl = new Builder().onlyIfCached()
+                    .maxStale(getMaxStaleDuration(), getMaxStaleDurationTimeUnit()).build();
+            Request newRequest = request.newBuilder().cacheControl(cacheControl).build();
+            try {
+                response = chain.proceed(newRequest);
+            } catch (Exception e) { // cache not available
+                throw e;
+            }
+        }
+        return response;
+    }
 }
